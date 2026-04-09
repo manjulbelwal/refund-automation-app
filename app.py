@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-from st_aggrid import AgGrid, GridOptionsBuilder
 
 st.set_page_config(page_title="Refund Intelligence App", layout="wide")
 
@@ -25,21 +24,21 @@ if master_file:
         # ==============================
         # COLUMN MAPPING
         # ==============================
-        complaints["Product_Value"] = complaints.iloc[:, 12]
-        complaints["Final_Status"] = complaints.iloc[:, 22]
-        complaints["Mobile"] = complaints.iloc[:, 3]
-        complaints["Occurrence"] = complaints.iloc[:, 4]
-        complaints["GL"] = complaints.iloc[:, 26]
-        complaints["Date"] = complaints.iloc[:, 16]
+        complaints["Product_Value"] = complaints.iloc[:, 12]   # Column M
+        complaints["Final_Status"] = complaints.iloc[:, 22]    # Column W
+        complaints["Mobile"] = complaints.iloc[:, 3]           # Column D
+        complaints["Occurrence"] = complaints.iloc[:, 4]       # Column E
+        complaints["GL"] = complaints.iloc[:, 26]              # Column AA
+        complaints["Date"] = complaints.iloc[:, 16]            # Column Q (IMPORTANT)
 
         complaints["Date"] = pd.to_datetime(complaints["Date"], errors='coerce')
 
-        # Detect ASIN
+        # Detect ASIN column
         asin_col = [col for col in complaints.columns if "asin" in col.lower()]
         complaints["ASIN"] = complaints[asin_col[0]] if asin_col else "Unknown"
 
         # ==============================
-        # CLEAN PRODUCT VALUE
+        # CLEAN PRODUCT VALUE (₹ FIX)
         # ==============================
         complaints["Product_Value"] = (
             complaints["Product_Value"]
@@ -78,8 +77,11 @@ if master_file:
             axis=1
         )
 
+        complaints["Refund_Value"] = complaints["Refund_Value"].fillna(0)
+        complaints["Savings_Value"] = complaints["Savings_Value"].fillna(0)
+
         # ==============================
-        # FILTERS
+        # FILTERS (Column Q based)
         # ==============================
         st.sidebar.header("Filters")
 
@@ -95,7 +97,7 @@ if master_file:
             ]
 
         # ==============================
-        # KPI
+        # KPI METRICS
         # ==============================
         st.header("📌 Key Metrics")
 
@@ -118,41 +120,31 @@ if master_file:
         st.line_chart(monthly)
 
         # ==============================
-        # GL → ASIN TABLE (AG GRID)
+        # GL → ASIN DRILLDOWN (FINAL UX)
         # ==============================
-        st.header("📊 GL → ASIN Drilldown (Table + Search)")
+        st.header("📊 GL → ASIN Drilldown")
 
-        grouped = complaints.groupby(["GL", "ASIN"])[
-            ["Refund_Value", "Savings_Value"]
-        ].sum().reset_index()
+        gl_summary = complaints.groupby("GL")[["Refund_Value", "Savings_Value"]].sum().reset_index()
+        gl_summary = gl_summary.sort_values(by="Refund_Value", ascending=False)
 
-        gb = GridOptionsBuilder.from_dataframe(grouped)
+        st.subheader("🔢 GL Summary (Click to Expand)")
 
-        # Enable grouping
-        gb.configure_column("GL", rowGroup=True, hide=True)
-        gb.configure_column("ASIN", rowGroup=True, hide=True)
+        for _, row in gl_summary.iterrows():
 
-        # Enable filters + sorting
-        gb.configure_default_column(
-            filter=True,
-            sortable=True,
-            resizable=True
-        )
+            gl = row["GL"]
+            gl_refund = row["Refund_Value"]
+            gl_savings = row["Savings_Value"]
 
-        # Sidebar filters
-        gb.configure_side_bar()
+            with st.expander(f"➕ GL: {gl} | Refund ₹{gl_refund:,.0f} | Savings ₹{gl_savings:,.0f}"):
 
-        gb.configure_grid_options(groupDefaultExpanded=1)
+                gl_data = complaints[complaints["GL"] == gl]
 
-        gridOptions = gb.build()
+                asin_group = gl_data.groupby("ASIN")[["Refund_Value", "Savings_Value"]].sum().reset_index()
 
-        AgGrid(
-            grouped,
-            gridOptions=gridOptions,
-            enable_enterprise_modules=True,
-            fit_columns_on_grid_load=True,
-            height=400
-        )
+                st.dataframe(
+                    asin_group.sort_values(by="Refund_Value", ascending=False),
+                    use_container_width=True
+                )
 
         # ==============================
         # CUSTOMER INSIGHTS
@@ -183,6 +175,7 @@ if daily_file:
         st.header("🧪 Daily Refund Validation")
         st.write("Total Orders:", len(orders))
 
+        # Missing values
         missing = orders.isnull().sum()
         missing = missing[missing > 0]
 
@@ -192,6 +185,7 @@ if daily_file:
         else:
             st.success("No missing values")
 
+        # Duplicate orders
         order_col = [col for col in orders.columns if "order" in col.lower()]
 
         if order_col:
