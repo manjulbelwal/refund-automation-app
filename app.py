@@ -24,12 +24,12 @@ if master_file:
         # ==============================
         # COLUMN MAPPING
         # ==============================
-        complaints["Product_Value"] = complaints.iloc[:, 12]   # Column M
-        complaints["Final_Status"] = complaints.iloc[:, 22]    # Column W
-        complaints["Mobile"] = complaints.iloc[:, 3]           # Column D
-        complaints["Occurrence"] = complaints.iloc[:, 4]       # Column E
-        complaints["GL"] = complaints.iloc[:, 26]              # Column AA
-        complaints["Date"] = complaints.iloc[:, 16]            # Column Q (IMPORTANT)
+        complaints["Product_Value"] = complaints.iloc[:, 12]
+        complaints["Final_Status"] = complaints.iloc[:, 22]
+        complaints["Mobile"] = complaints.iloc[:, 3]
+        complaints["Occurrence"] = complaints.iloc[:, 4]
+        complaints["GL"] = complaints.iloc[:, 26]
+        complaints["Date"] = complaints.iloc[:, 16]
 
         complaints["Date"] = pd.to_datetime(complaints["Date"], errors='coerce')
 
@@ -38,7 +38,7 @@ if master_file:
         complaints["ASIN"] = complaints[asin_col[0]] if asin_col else "Unknown"
 
         # ==============================
-        # CLEAN PRODUCT VALUE (₹ FIX)
+        # CLEAN PRODUCT VALUE
         # ==============================
         complaints["Product_Value"] = (
             complaints["Product_Value"]
@@ -81,7 +81,7 @@ if master_file:
         complaints["Savings_Value"] = complaints["Savings_Value"].fillna(0)
 
         # ==============================
-        # FILTERS (Column Q based)
+        # FILTERS
         # ==============================
         st.sidebar.header("Filters")
 
@@ -119,56 +119,49 @@ if master_file:
 
         st.line_chart(monthly)
 
-       # ==============================
-# GL → ASIN DRILLDOWN (SINGLE TABLE UX)
-# ==============================
-st.header("📊 GL → ASIN Drilldown")
+        # ==============================
+        # GL → ASIN DRILLDOWN
+        # ==============================
+        st.header("📊 GL → ASIN Drilldown")
 
-gl_summary = complaints.groupby("GL")[["Refund_Value", "Savings_Value"]].sum().reset_index()
-gl_summary = gl_summary.sort_values(by="Refund_Value", ascending=False)
+        gl_summary = complaints.groupby("GL")[["Refund_Value", "Savings_Value"]].sum().reset_index()
+        gl_summary = gl_summary.sort_values(by="Refund_Value", ascending=False)
 
-# Format numbers
-gl_summary["Refund_Display"] = gl_summary["Refund_Value"].apply(lambda x: f"₹{x:,.0f}")
-gl_summary["Savings_Display"] = gl_summary["Savings_Value"].apply(lambda x: f"₹{x:,.0f}")
+        gl_summary["Refund_Display"] = gl_summary["Refund_Value"].apply(lambda x: f"₹{x:,.0f}")
+        gl_summary["Savings_Display"] = gl_summary["Savings_Value"].apply(lambda x: f"₹{x:,.0f}")
 
-# Show summary table (clean UI)
-st.subheader("🔢 GL Summary")
+        st.subheader("🔢 GL Summary")
 
-display_df = gl_summary[["GL", "Refund_Display", "Savings_Display"]].rename(columns={
-    "GL": "GL Category",
-    "Refund_Display": "Refund ₹",
-    "Savings_Display": "Savings ₹"
-})
+        display_df = gl_summary[["GL", "Refund_Display", "Savings_Display"]].rename(columns={
+            "GL": "GL Category",
+            "Refund_Display": "Refund ₹",
+            "Savings_Display": "Savings ₹"
+        })
 
-st.dataframe(display_df, use_container_width=True)
+        st.dataframe(display_df, use_container_width=True)
 
-# ==============================
-# EXPANDABLE DETAIL VIEW
-# ==============================
-st.subheader("➕ Click below to expand GL → ASIN")
+        st.subheader("➕ Click below to expand GL → ASIN")
 
-for _, row in gl_summary.iterrows():
+        for _, row in gl_summary.iterrows():
 
-    gl = row["GL"]
-    gl_refund = row["Refund_Value"]
-    gl_savings = row["Savings_Value"]
+            gl = row["GL"]
+            gl_refund = row["Refund_Value"]
+            gl_savings = row["Savings_Value"]
 
-    with st.expander(f"➕ GL: {gl} | Refund ₹{gl_refund:,.0f} | Savings ₹{gl_savings:,.0f}"):
+            with st.expander(f"➕ GL: {gl} | Refund ₹{gl_refund:,.0f} | Savings ₹{gl_savings:,.0f}"):
 
-        gl_data = complaints[complaints["GL"] == gl]
+                gl_data = complaints[complaints["GL"] == gl]
 
-        asin_group = gl_data.groupby("ASIN")[["Refund_Value", "Savings_Value"]].sum().reset_index()
+                asin_group = gl_data.groupby("ASIN")[["Refund_Value", "Savings_Value"]].sum().reset_index()
+                asin_group = asin_group.sort_values(by="Refund_Value", ascending=False)
 
-        asin_group = asin_group.sort_values(by="Refund_Value", ascending=False)
+                asin_group["Refund ₹"] = asin_group["Refund_Value"].apply(lambda x: f"₹{x:,.0f}")
+                asin_group["Savings ₹"] = asin_group["Savings_Value"].apply(lambda x: f"₹{x:,.0f}")
 
-        # Format inside table
-        asin_group["Refund ₹"] = asin_group["Refund_Value"].apply(lambda x: f"₹{x:,.0f}")
-        asin_group["Savings ₹"] = asin_group["Savings_Value"].apply(lambda x: f"₹{x:,.0f}")
-
-        st.dataframe(
-            asin_group[["ASIN", "Refund ₹", "Savings ₹"]],
-            use_container_width=True
-        )
+                st.dataframe(
+                    asin_group[["ASIN", "Refund ₹", "Savings ₹"]],
+                    use_container_width=True
+                )
 
         # ==============================
         # CUSTOMER INSIGHTS
@@ -199,7 +192,6 @@ if daily_file:
         st.header("🧪 Daily Refund Validation")
         st.write("Total Orders:", len(orders))
 
-        # Missing values
         missing = orders.isnull().sum()
         missing = missing[missing > 0]
 
@@ -209,7 +201,6 @@ if daily_file:
         else:
             st.success("No missing values")
 
-        # Duplicate orders
         order_col = [col for col in orders.columns if "order" in col.lower()]
 
         if order_col:
