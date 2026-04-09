@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+from st_aggrid import AgGrid, GridOptionsBuilder
 
 st.set_page_config(page_title="Refund Intelligence App", layout="wide")
 
@@ -120,48 +121,36 @@ if master_file:
         st.line_chart(monthly)
 
         # ==============================
-        # GL → ASIN DRILLDOWN
+        # AG GRID: GL → ASIN DRILLDOWN
         # ==============================
         st.header("📊 GL → ASIN Drilldown")
 
-        gl_summary = complaints.groupby("GL")[["Refund_Value", "Savings_Value"]].sum().reset_index()
-        gl_summary = gl_summary.sort_values(by="Refund_Value", ascending=False)
+        gl_asin = complaints.groupby(["GL", "ASIN"])[["Refund_Value", "Savings_Value"]].sum().reset_index()
 
-        gl_summary["Refund_Display"] = gl_summary["Refund_Value"].apply(lambda x: f"₹{x:,.0f}")
-        gl_summary["Savings_Display"] = gl_summary["Savings_Value"].apply(lambda x: f"₹{x:,.0f}")
+        # Build grid
+        gb = GridOptionsBuilder.from_dataframe(gl_asin)
 
-        st.subheader("🔢 GL Summary")
+        gb.configure_column("GL", rowGroup=True, hide=True)
+        gb.configure_column("ASIN", header_name="ASIN")
 
-        display_df = gl_summary[["GL", "Refund_Display", "Savings_Display"]].rename(columns={
-            "GL": "GL Category",
-            "Refund_Display": "Refund ₹",
-            "Savings_Display": "Savings ₹"
-        })
+        gb.configure_column("Refund_Value", header_name="Refund ₹", aggFunc="sum")
+        gb.configure_column("Savings_Value", header_name="Savings ₹", aggFunc="sum")
 
-        st.dataframe(display_df, use_container_width=True)
+        gb.configure_default_column(sortable=True, filter=True, resizable=True)
 
-        st.subheader("➕ Click below to expand GL → ASIN")
+        gb.configure_grid_options(
+            groupDefaultExpanded=0,
+            animateRows=True
+        )
 
-        for _, row in gl_summary.iterrows():
+        grid_options = gb.build()
 
-            gl = row["GL"]
-            gl_refund = row["Refund_Value"]
-            gl_savings = row["Savings_Value"]
-
-            with st.expander(f"➕ GL: {gl} | Refund ₹{gl_refund:,.0f} | Savings ₹{gl_savings:,.0f}"):
-
-                gl_data = complaints[complaints["GL"] == gl]
-
-                asin_group = gl_data.groupby("ASIN")[["Refund_Value", "Savings_Value"]].sum().reset_index()
-                asin_group = asin_group.sort_values(by="Refund_Value", ascending=False)
-
-                asin_group["Refund ₹"] = asin_group["Refund_Value"].apply(lambda x: f"₹{x:,.0f}")
-                asin_group["Savings ₹"] = asin_group["Savings_Value"].apply(lambda x: f"₹{x:,.0f}")
-
-                st.dataframe(
-                    asin_group[["ASIN", "Refund ₹", "Savings ₹"]],
-                    use_container_width=True
-                )
+        AgGrid(
+            gl_asin,
+            gridOptions=grid_options,
+            height=500,
+            fit_columns_on_grid_load=True
+        )
 
         # ==============================
         # CUSTOMER INSIGHTS
