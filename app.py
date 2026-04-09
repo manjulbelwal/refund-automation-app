@@ -2,138 +2,174 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 
-st.set_page_config(page_title="Refund Automation App", layout="wide")
+st.set_page_config(page_title="Refund Intelligence App", layout="wide")
 
-st.title("📊 Refund Automation Dashboard")
+st.title("📊 Refund Intelligence Dashboard")
 
 # ==============================
-# FILE UPLOADS
+# UPLOAD FILES
 # ==============================
 st.sidebar.header("Upload Files")
-
 master_file = st.sidebar.file_uploader("Upload Master File", type=["xlsx"])
 daily_file = st.sidebar.file_uploader("Upload Daily Refund File", type=["xlsx"])
 
 # ==============================
-# LOAD MASTER DATA
+# LOAD MASTER FILE
 # ==============================
 if master_file:
-    try:
-        complaints = pd.read_excel(master_file, sheet_name="Complaints_Base")
-        warranty = pd.read_excel(master_file, sheet_name="Warranty_Period")
+    complaints = pd.read_excel(master_file, sheet_name="Complaints_Base")
 
-        st.success("Master file loaded successfully!")
+    st.success("Master file loaded successfully!")
 
-        # Convert date column (auto detect)
-        date_col = None
-        for col in complaints.columns:
-            if "date" in col.lower():
-                date_col = col
-                complaints[col] = pd.to_datetime(complaints[col], errors='coerce')
-                break
+    # ==============================
+    # COLUMN MAPPING (BASED ON YOUR INPUT)
+    # ==============================
+    complaints["Product_Value"] = complaints.iloc[:, 12]   # Column M
+    complaints["Final_Status"] = complaints.iloc[:, 22]    # Column W
+    complaints["Mobile"] = complaints.iloc[:, 3]           # Column D
+    complaints["Occurrence"] = complaints.iloc[:, 4]       # Column E
+    complaints["GL"] = complaints.iloc[:, 26]              # Column AA
 
-        # ==============================
-        # DASHBOARD
-        # ==============================
-        st.header("📈 Dashboard")
+    # Detect ASIN column
+    asin_col = [col for col in complaints.columns if "asin" in col.lower()]
+    if asin_col:
+        complaints["ASIN"] = complaints[asin_col[0]]
 
-        col1, col2, col3 = st.columns(3)
+    # Detect date column
+    date_col = None
+    for col in complaints.columns:
+        if "date" in col.lower():
+            date_col = col
+            complaints[col] = pd.to_datetime(complaints[col], errors='coerce')
+            break
 
-        total_refund = complaints.select_dtypes(include=['number']).sum().sum()
-        total_records = len(complaints)
+    # ==============================
+    # STATUS LOGIC
+    # ==============================
+    refund_status = [
+        "Closed(Refund Given)",
+        "Closed(Refund Given-HI&BISS)",
+        "Closed(Refund Given-BONKASO)"
+    ]
 
-        col1.metric("Total Records", total_records)
-        col2.metric("Total Numeric Value", round(total_refund, 2))
+    savings_status = [
+        "Rejected",
+        "Closed(No Response From CX)",
+        "Closed(Issue Resolved)"
+    ]
 
-        if date_col:
-            complaints['Month'] = complaints[date_col].dt.to_period('M').astype(str)
+    complaints["Refund_Value"] = complaints.apply(
+        lambda x: x["Product_Value"] if x["Final_Status"] in refund_status else 0,
+        axis=1
+    )
 
-            monthly = complaints.groupby('Month').size().reset_index(name='Count')
-            st.subheader("Monthly Trend")
-            st.line_chart(monthly.set_index('Month'))
+    complaints["Savings_Value"] = complaints.apply(
+        lambda x: x["Product_Value"] if x["Final_Status"] in savings_status else 0,
+        axis=1
+    )
 
-        # ASIN Level
-        asin_col = [col for col in complaints.columns if "asin" in col.lower()]
-        if asin_col:
-            st.subheader("ASIN Level Stats")
-            asin_stats = complaints.groupby(asin_col[0]).size().reset_index(name='Count')
-            st.dataframe(asin_stats)
+    # ==============================
+    # FILTERS
+    # ==============================
+    st.sidebar.header("Filters")
 
-    except Exception as e:
-        st.error(f"Error loading master file: {e}")
+    if date_col:
+        min_date = complaints[date_col].min()
+        max_date = complaints[date_col].max()
 
-# ==============================
-# DAILY FILE VALIDATION
-# ==============================
-if daily_file:
-    try:
-        orders = pd.read_excel(daily_file, sheet_name="Order")
+        date_range = st.sidebar.date_input("Select Date Range", [min_date, max_date])
 
-        st.header("🧪 Daily Refund Validation")
-
-        st.write("Total Orders in File:", len(orders))
-
-        # ------------------------------
-        # MISSING VALUES CHECK
-        # ------------------------------
-        st.subheader("Missing Values Check")
-
-        missing = orders.isnull().sum()
-        missing = missing[missing > 0]
-
-        if not missing.empty:
-            st.warning("Missing values found:")
-            st.dataframe(missing)
-        else:
-            st.success("No missing values!")
-
-        # ------------------------------
-        # DUPLICATE ORDER ID CHECK
-        # ------------------------------
-        st.subheader("Duplicate Order ID Check")
-
-        order_id_col = None
-        for col in orders.columns:
-            if "order" in col.lower():
-                order_id_col = col
-                break
-
-        if order_id_col:
-            duplicates = orders[orders.duplicated(subset=[order_id_col], keep=False)]
-
-            if not duplicates.empty:
-                st.error("Duplicate Order IDs found!")
-                st.dataframe(duplicates)
-            else:
-                st.success("No duplicate Order IDs!")
-
-        # ------------------------------
-        # MISUSE CHECK (>3 refunds in 365 days)
-        # ------------------------------
-        st.subheader("Customer Misuse Check (>3 refunds in 365 days)")
-
-        email_col = None
-        for col in orders.columns:
-            if "email" in col.lower():
-                email_col = col
-                break
-
-        if master_file and email_col:
-            complaints[email_col] = complaints[email_col].astype(str)
-
-            last_365_days = complaints[
-                complaints[date_col] >= (datetime.now() - timedelta(days=365))
+        if len(date_range) == 2:
+            complaints = complaints[
+                (complaints[date_col] >= pd.to_datetime(date_range[0])) &
+                (complaints[date_col] <= pd.to_datetime(date_range[1]))
             ]
 
-            counts = last_365_days.groupby(email_col).size().reset_index(name='refund_count')
+    # ==============================
+    # KPI METRICS
+    # ==============================
+    st.header("📌 Key Metrics")
 
-            misuse = counts[counts['refund_count'] > 3]
+    col1, col2, col3 = st.columns(3)
 
-            if not misuse.empty:
-                st.error("Potential misuse customers found!")
-                st.dataframe(misuse)
-            else:
-                st.success("No misuse detected!")
+    col1.metric("Total Complaints", len(complaints))
+    col2.metric("Total Refund (₹)", int(complaints["Refund_Value"].sum()))
+    col3.metric("Total Savings (₹)", int(complaints["Savings_Value"].sum()))
 
-    except Exception as e:
-        st.error(f"Error processing daily file: {e}")
+    # ==============================
+    # LLM STYLE QUESTIONS
+    # ==============================
+    st.subheader("💡 Ask Business Questions")
+
+    question = st.selectbox(
+        "Select a question",
+        [
+            "Total Refund This Year",
+            "Total Savings This Year",
+            "Refund vs Savings (Monthly)",
+        ]
+    )
+
+    if question == "Total Refund This Year":
+        st.success(f"₹ {int(complaints['Refund_Value'].sum())}")
+
+    elif question == "Total Savings This Year":
+        st.success(f"₹ {int(complaints['Savings_Value'].sum())}")
+
+    elif question == "Refund vs Savings (Monthly)":
+        if date_col:
+            complaints["Month"] = complaints[date_col].dt.to_period("M").astype(str)
+            monthly = complaints.groupby("Month")[["Refund_Value", "Savings_Value"]].sum()
+            st.line_chart(monthly)
+
+    # ==============================
+    # GL → ASIN DASHBOARD
+    # ==============================
+    st.header("📊 GL → ASIN Breakdown")
+
+    gl_group = complaints.groupby(["GL", "ASIN"])[["Refund_Value", "Savings_Value"]].sum().reset_index()
+    st.dataframe(gl_group)
+
+    # ==============================
+    # CUSTOMER INSIGHTS
+    # ==============================
+    st.header("👥 Customer Insights")
+
+    customer_group = complaints.groupby("Mobile").agg({
+        "Refund_Value": "sum",
+        "Savings_Value": "sum",
+        "Occurrence": "max"
+    }).reset_index()
+
+    st.dataframe(customer_group.sort_values(by="Refund_Value", ascending=False))
+
+# ==============================
+# DAILY VALIDATION
+# ==============================
+if daily_file:
+    orders = pd.read_excel(daily_file, sheet_name="Order")
+
+    st.header("🧪 Daily Refund Validation")
+
+    st.write("Total Orders:", len(orders))
+
+    # Missing Values
+    missing = orders.isnull().sum()
+    missing = missing[missing > 0]
+
+    if not missing.empty:
+        st.warning("Missing values found")
+        st.dataframe(missing)
+    else:
+        st.success("No missing values")
+
+    # Duplicate Check
+    order_col = [col for col in orders.columns if "order" in col.lower()]
+    if order_col:
+        duplicates = orders[orders.duplicated(subset=[order_col[0]], keep=False)]
+
+        if not duplicates.empty:
+            st.error("Duplicate Order IDs found")
+            st.dataframe(duplicates)
+        else:
+            st.success("No duplicate orders")
