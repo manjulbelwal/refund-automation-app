@@ -118,34 +118,45 @@ if master_file:
         monthly = complaints.groupby("Month")[["Refund_Value", "Savings_Value"]].sum()
 
         st.line_chart(monthly)
+        
+# ==============================
+# GL → ASIN DRILLDOWN (TABULAR + SEARCH)
+# ==============================
+st.header("📊 GL → ASIN Drilldown (Table View)")
 
-        # ==============================
-        # GL → ASIN DRILLDOWN (FINAL UX)
-        # ==============================
-        st.header("📊 GL → ASIN Drilldown")
+grouped = df.groupby(["GL", "ASIN"])[["Refund_Value", "Savings_Value"]].sum().reset_index()
 
-        gl_summary = complaints.groupby("GL")[["Refund_Value", "Savings_Value"]].sum().reset_index()
-        gl_summary = gl_summary.sort_values(by="Refund_Value", ascending=False)
+# Build Grid
+gb = GridOptionsBuilder.from_dataframe(grouped)
 
-        st.subheader("🔢 GL Summary (Click to Expand)")
+# Enable grouping (GL → ASIN)
+gb.configure_column("GL", rowGroup=True, hide=True)
+gb.configure_column("ASIN", rowGroup=True, hide=True)
 
-        for _, row in gl_summary.iterrows():
+# Enable filters (SEARCH BOXES)
+gb.configure_default_column(
+    filter=True,     # enables search
+    sortable=True,
+    resizable=True
+)
 
-            gl = row["GL"]
-            gl_refund = row["Refund_Value"]
-            gl_savings = row["Savings_Value"]
+# Enable sidebar (for filters like Power BI)
+gb.configure_side_bar()
 
-            with st.expander(f"➕ GL: {gl} | Refund ₹{gl_refund:,.0f} | Savings ₹{gl_savings:,.0f}"):
+# Expand by default (optional)
+gb.configure_grid_options(
+    groupDefaultExpanded=1
+)
 
-                gl_data = complaints[complaints["GL"] == gl]
+gridOptions = gb.build()
 
-                asin_group = gl_data.groupby("ASIN")[["Refund_Value", "Savings_Value"]].sum().reset_index()
-
-                st.dataframe(
-                    asin_group.sort_values(by="Refund_Value", ascending=False),
-                    use_container_width=True
-                )
-
+AgGrid(
+    grouped,
+    gridOptions=gridOptions,
+    enable_enterprise_modules=True,
+    fit_columns_on_grid_load=True,
+    height=400
+)
         # ==============================
         # CUSTOMER INSIGHTS
         # ==============================
