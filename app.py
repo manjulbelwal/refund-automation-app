@@ -30,24 +30,16 @@ if master_file:
         complaints["Mobile"] = complaints.iloc[:, 3]           # Column D
         complaints["Occurrence"] = complaints.iloc[:, 4]       # Column E
         complaints["GL"] = complaints.iloc[:, 26]              # Column AA
+        complaints["Date"] = complaints.iloc[:, 16]            # Column Q (IMPORTANT FIX)
 
-        # Detect ASIN column
+        complaints["Date"] = pd.to_datetime(complaints["Date"], errors='coerce')
+
+        # Detect ASIN
         asin_col = [col for col in complaints.columns if "asin" in col.lower()]
-        if asin_col:
-            complaints["ASIN"] = complaints[asin_col[0]]
-        else:
-            complaints["ASIN"] = "Unknown"
-
-        # Detect date column
-        date_col = None
-        for col in complaints.columns:
-            if "date" in col.lower():
-                date_col = col
-                complaints[col] = pd.to_datetime(complaints[col], errors='coerce')
-                break
+        complaints["ASIN"] = complaints[asin_col[0]] if asin_col else "Unknown"
 
         # ==============================
-        # CLEAN PRODUCT VALUE (CRITICAL FIX)
+        # CLEAN PRODUCT VALUE
         # ==============================
         complaints["Product_Value"] = (
             complaints["Product_Value"]
@@ -86,28 +78,21 @@ if master_file:
             axis=1
         )
 
-        complaints["Refund_Value"] = complaints["Refund_Value"].fillna(0)
-        complaints["Savings_Value"] = complaints["Savings_Value"].fillna(0)
-
         # ==============================
-        # FILTERS
+        # FILTERS (NOW BASED ON COLUMN Q)
         # ==============================
         st.sidebar.header("Filters")
 
-        if date_col:
-            min_date = complaints[date_col].min()
-            max_date = complaints[date_col].max()
+        min_date = complaints["Date"].min()
+        max_date = complaints["Date"].max()
 
-            date_range = st.sidebar.date_input(
-                "Select Date Range",
-                [min_date, max_date]
-            )
+        date_range = st.sidebar.date_input("Select Date Range", [min_date, max_date])
 
-            if len(date_range) == 2:
-                complaints = complaints[
-                    (complaints[date_col] >= pd.to_datetime(date_range[0])) &
-                    (complaints[date_col] <= pd.to_datetime(date_range[1]))
-                ]
+        if len(date_range) == 2:
+            complaints = complaints[
+                (complaints["Date"] >= pd.to_datetime(date_range[0])) &
+                (complaints["Date"] <= pd.to_datetime(date_range[1]))
+            ]
 
         # ==============================
         # KPI METRICS
@@ -123,41 +108,37 @@ if master_file:
         col3.metric("Total Savings (₹)", f"{total_savings:,.0f}")
 
         # ==============================
-        # LLM STYLE QUESTIONS
+        # MONTHLY ANALYSIS
         # ==============================
-        st.subheader("💡 Business Insights")
+        st.subheader("📈 Monthly Trend")
 
-        question = st.selectbox(
-            "Select a question",
-            [
-                "Total Refund",
-                "Total Savings",
-                "Refund vs Savings (Monthly)"
-            ]
-        )
-
-        if question == "Total Refund":
-            st.success(f"₹ {total_refund:,.0f}")
-
-        elif question == "Total Savings":
-            st.success(f"₹ {total_savings:,.0f}")
-
-        elif question == "Refund vs Savings (Monthly)":
-            if date_col:
-                complaints["Month"] = complaints[date_col].dt.to_period("M").astype(str)
-                monthly = complaints.groupby("Month")[["Refund_Value", "Savings_Value"]].sum()
-                st.line_chart(monthly)
+        complaints["Month"] = complaints["Date"].dt.to_period("M").astype(str)
+        monthly = complaints.groupby("Month")[["Refund_Value", "Savings_Value"]].sum()
+        st.line_chart(monthly)
 
         # ==============================
-        # GL → ASIN BREAKDOWN
+        # GL → ASIN BREAKDOWN (ENHANCED)
         # ==============================
         st.header("📊 GL → ASIN Breakdown")
 
-        gl_group = complaints.groupby(["GL", "ASIN"])[
-            ["Refund_Value", "Savings_Value"]
-        ].sum().reset_index()
+        # Totals at top
+        total_df = complaints.groupby("GL")[["Refund_Value", "Savings_Value"]].sum().reset_index()
+        st.subheader("🔢 GL Level Totals")
+        st.dataframe(total_df.sort_values(by="Refund_Value", ascending=False))
 
-        st.dataframe(gl_group.sort_values(by="Refund_Value", ascending=False))
+        st.subheader("📂 Expand for ASIN Level Details")
+
+        for gl in complaints["GL"].dropna().unique():
+            gl_data = complaints[complaints["GL"] == gl]
+
+            gl_total_refund = gl_data["Refund_Value"].sum()
+            gl_total_savings = gl_data["Savings_Value"].sum()
+
+            with st.expander(f"GL: {gl} | Refund ₹{gl_total_refund:,.0f} | Savings ₹{gl_total_savings:,.0f}"):
+
+                asin_group = gl_data.groupby("ASIN")[["Refund_Value", "Savings_Value"]].sum().reset_index()
+
+                st.dataframe(asin_group.sort_values(by="Refund_Value", ascending=False))
 
         # ==============================
         # CUSTOMER INSIGHTS
@@ -185,9 +166,7 @@ if daily_file:
         st.header("🧪 Daily Refund Validation")
         st.write("Total Orders:", len(orders))
 
-        # ------------------------------
-        # MISSING VALUES
-        # ------------------------------
+        # Missing Values
         missing = orders.isnull().sum()
         missing = missing[missing > 0]
 
@@ -197,9 +176,7 @@ if daily_file:
         else:
             st.success("No missing values")
 
-        # ------------------------------
-        # DUPLICATES
-        # ------------------------------
+        # Duplicate Orders
         order_col = [col for col in orders.columns if "order" in col.lower()]
 
         if order_col:
