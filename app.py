@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta
 
 st.set_page_config(page_title="Refund Intelligence App", layout="wide")
 
@@ -30,16 +29,16 @@ if master_file:
         complaints["Mobile"] = complaints.iloc[:, 3]           # Column D
         complaints["Occurrence"] = complaints.iloc[:, 4]       # Column E
         complaints["GL"] = complaints.iloc[:, 26]              # Column AA
-        complaints["Date"] = complaints.iloc[:, 16]            # Column Q (IMPORTANT FIX)
+        complaints["Date"] = complaints.iloc[:, 16]            # Column Q (IMPORTANT)
 
         complaints["Date"] = pd.to_datetime(complaints["Date"], errors='coerce')
 
-        # Detect ASIN
+        # Detect ASIN column
         asin_col = [col for col in complaints.columns if "asin" in col.lower()]
         complaints["ASIN"] = complaints[asin_col[0]] if asin_col else "Unknown"
 
         # ==============================
-        # CLEAN PRODUCT VALUE
+        # CLEAN PRODUCT VALUE (₹ FIX)
         # ==============================
         complaints["Product_Value"] = (
             complaints["Product_Value"]
@@ -78,8 +77,11 @@ if master_file:
             axis=1
         )
 
+        complaints["Refund_Value"] = complaints["Refund_Value"].fillna(0)
+        complaints["Savings_Value"] = complaints["Savings_Value"].fillna(0)
+
         # ==============================
-        # FILTERS (NOW BASED ON COLUMN Q)
+        # FILTERS (Column Q based)
         # ==============================
         st.sidebar.header("Filters")
 
@@ -108,37 +110,41 @@ if master_file:
         col3.metric("Total Savings (₹)", f"{total_savings:,.0f}")
 
         # ==============================
-        # MONTHLY ANALYSIS
+        # MONTHLY TREND
         # ==============================
         st.subheader("📈 Monthly Trend")
 
         complaints["Month"] = complaints["Date"].dt.to_period("M").astype(str)
         monthly = complaints.groupby("Month")[["Refund_Value", "Savings_Value"]].sum()
+
         st.line_chart(monthly)
 
         # ==============================
-        # GL → ASIN BREAKDOWN (ENHANCED)
+        # GL → ASIN DRILLDOWN (FINAL UX)
         # ==============================
-        st.header("📊 GL → ASIN Breakdown")
+        st.header("📊 GL → ASIN Drilldown")
 
-        # Totals at top
-        total_df = complaints.groupby("GL")[["Refund_Value", "Savings_Value"]].sum().reset_index()
-        st.subheader("🔢 GL Level Totals")
-        st.dataframe(total_df.sort_values(by="Refund_Value", ascending=False))
+        gl_summary = complaints.groupby("GL")[["Refund_Value", "Savings_Value"]].sum().reset_index()
+        gl_summary = gl_summary.sort_values(by="Refund_Value", ascending=False)
 
-        st.subheader("📂 Expand for ASIN Level Details")
+        st.subheader("🔢 GL Summary (Click to Expand)")
 
-        for gl in complaints["GL"].dropna().unique():
-            gl_data = complaints[complaints["GL"] == gl]
+        for _, row in gl_summary.iterrows():
 
-            gl_total_refund = gl_data["Refund_Value"].sum()
-            gl_total_savings = gl_data["Savings_Value"].sum()
+            gl = row["GL"]
+            gl_refund = row["Refund_Value"]
+            gl_savings = row["Savings_Value"]
 
-            with st.expander(f"GL: {gl} | Refund ₹{gl_total_refund:,.0f} | Savings ₹{gl_total_savings:,.0f}"):
+            with st.expander(f"➕ GL: {gl} | Refund ₹{gl_refund:,.0f} | Savings ₹{gl_savings:,.0f}"):
+
+                gl_data = complaints[complaints["GL"] == gl]
 
                 asin_group = gl_data.groupby("ASIN")[["Refund_Value", "Savings_Value"]].sum().reset_index()
 
-                st.dataframe(asin_group.sort_values(by="Refund_Value", ascending=False))
+                st.dataframe(
+                    asin_group.sort_values(by="Refund_Value", ascending=False),
+                    use_container_width=True
+                )
 
         # ==============================
         # CUSTOMER INSIGHTS
@@ -151,7 +157,10 @@ if master_file:
             "Occurrence": "max"
         }).reset_index()
 
-        st.dataframe(customer_group.sort_values(by="Refund_Value", ascending=False))
+        st.dataframe(
+            customer_group.sort_values(by="Refund_Value", ascending=False),
+            use_container_width=True
+        )
 
     except Exception as e:
         st.error(f"Error processing master file: {e}")
@@ -166,7 +175,7 @@ if daily_file:
         st.header("🧪 Daily Refund Validation")
         st.write("Total Orders:", len(orders))
 
-        # Missing Values
+        # Missing values
         missing = orders.isnull().sum()
         missing = missing[missing > 0]
 
@@ -176,7 +185,7 @@ if daily_file:
         else:
             st.success("No missing values")
 
-        # Duplicate Orders
+        # Duplicate orders
         order_col = [col for col in orders.columns if "order" in col.lower()]
 
         if order_col:
