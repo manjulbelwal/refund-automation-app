@@ -119,32 +119,56 @@ if master_file:
 
         st.line_chart(monthly)
 
-        # ==============================
-        # GL → ASIN DRILLDOWN (FINAL UX)
-        # ==============================
-        st.header("📊 GL → ASIN Drilldown")
+       # ==============================
+# GL → ASIN DRILLDOWN (SINGLE TABLE UX)
+# ==============================
+st.header("📊 GL → ASIN Drilldown")
 
-        gl_summary = complaints.groupby("GL")[["Refund_Value", "Savings_Value"]].sum().reset_index()
-        gl_summary = gl_summary.sort_values(by="Refund_Value", ascending=False)
+gl_summary = complaints.groupby("GL")[["Refund_Value", "Savings_Value"]].sum().reset_index()
+gl_summary = gl_summary.sort_values(by="Refund_Value", ascending=False)
 
-        st.subheader("🔢 GL Summary (Click to Expand)")
+# Format numbers
+gl_summary["Refund_Display"] = gl_summary["Refund_Value"].apply(lambda x: f"₹{x:,.0f}")
+gl_summary["Savings_Display"] = gl_summary["Savings_Value"].apply(lambda x: f"₹{x:,.0f}")
 
-        for _, row in gl_summary.iterrows():
+# Show summary table (clean UI)
+st.subheader("🔢 GL Summary")
 
-            gl = row["GL"]
-            gl_refund = row["Refund_Value"]
-            gl_savings = row["Savings_Value"]
+display_df = gl_summary[["GL", "Refund_Display", "Savings_Display"]].rename(columns={
+    "GL": "GL Category",
+    "Refund_Display": "Refund ₹",
+    "Savings_Display": "Savings ₹"
+})
 
-            with st.expander(f"➕ GL: {gl} | Refund ₹{gl_refund:,.0f} | Savings ₹{gl_savings:,.0f}"):
+st.dataframe(display_df, use_container_width=True)
 
-                gl_data = complaints[complaints["GL"] == gl]
+# ==============================
+# EXPANDABLE DETAIL VIEW
+# ==============================
+st.subheader("➕ Click below to expand GL → ASIN")
 
-                asin_group = gl_data.groupby("ASIN")[["Refund_Value", "Savings_Value"]].sum().reset_index()
+for _, row in gl_summary.iterrows():
 
-                st.dataframe(
-                    asin_group.sort_values(by="Refund_Value", ascending=False),
-                    use_container_width=True
-                )
+    gl = row["GL"]
+    gl_refund = row["Refund_Value"]
+    gl_savings = row["Savings_Value"]
+
+    with st.expander(f"➕ GL: {gl} | Refund ₹{gl_refund:,.0f} | Savings ₹{gl_savings:,.0f}"):
+
+        gl_data = complaints[complaints["GL"] == gl]
+
+        asin_group = gl_data.groupby("ASIN")[["Refund_Value", "Savings_Value"]].sum().reset_index()
+
+        asin_group = asin_group.sort_values(by="Refund_Value", ascending=False)
+
+        # Format inside table
+        asin_group["Refund ₹"] = asin_group["Refund_Value"].apply(lambda x: f"₹{x:,.0f}")
+        asin_group["Savings ₹"] = asin_group["Savings_Value"].apply(lambda x: f"₹{x:,.0f}")
+
+        st.dataframe(
+            asin_group[["ASIN", "Refund ₹", "Savings ₹"]],
+            use_container_width=True
+        )
 
         # ==============================
         # CUSTOMER INSIGHTS
